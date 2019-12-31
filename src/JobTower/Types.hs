@@ -11,12 +11,12 @@ import Data.Function (on)
 import System.FilePath ((</>))
 
 data Job = Job
-  { jobId :: Text
-  , jobTime :: Maybe UTCTime
-  , jobFiles :: [Text]
-  , jobCmd :: Text
-  , jobArgs :: [Text]
-  , jobInput :: Text
+  { jobId :: Text -- ^ Job ID (automatically assigned)
+  , jobTime :: Maybe UTCTime -- ^ Job priority
+  , jobFiles :: [Text] -- ^ File dependency
+  , jobCmd :: Text -- ^ Command
+  , jobArgs :: [Text] -- ^ Arguments
+  , jobInput :: Text -- ^ stdin
   } deriving (Show, Generic)
 
 instance FromJSON Job where

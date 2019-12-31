@@ -4,6 +4,7 @@ module Main where
 import RIO
 
 import Control.Monad.Trans.Resource (runResourceT)
+import qualified Data.ByteString.Lazy as BL
 import Options.Applicative
 import RIO.Directory
 import RIO.Process
@@ -14,6 +15,8 @@ import qualified Data.Text.IO as T
 import qualified Network.HTTP.Simple as HC
 import qualified Network.HTTP.Client as HC
 import qualified RIO.Text as T
+import qualified RIO.Map as M
+import RIO.FilePath ((</>))
 import System.IO.Error (isEOFError)
 
 data Opts = Opts
@@ -36,7 +39,7 @@ fetch Opts{..} = do
   logInfo $ display jobId
 
   forM_ jobFiles $ \name -> do
-    let path = filesPrefix <> T.unpack name
+    let path = filesPrefix </> T.unpack name
 
     unlessM (doesFileExist path) $ do
       logInfo $ display jobId <> ": Fetching " <> display name
@@ -51,12 +54,14 @@ runJob :: Job -> RIO LoggedProcessContext ()
 runJob Job{..} = do
   let lp = display jobId <> ": "
   logInfo $ lp <> "Starting " <> display jobCmd <> " " <> displayShow jobArgs
-  proc (T.unpack jobCmd) (map T.unpack jobArgs) $ \conf -> withProcessWait
-    ( setStdin createPipe
+  withWorkingDir filesPrefix
+    $ withModifyEnvVars (M.insert "JOBTOWER_ID" jobId
+      . M.insertWith (\a b -> a <> ":" <> b) "PATH" (T.pack filesPrefix))
+    $ proc (T.unpack jobCmd) (map T.unpack jobArgs) $ \conf -> withProcessWait
+    ( setStdin (byteStringInput $ BL.fromStrict $ encodeUtf8 jobInput)
     $ setStdout createPipe
     $ setStderr createPipe conf)
     $ \ph -> do
-      liftIO $ T.hPutStr (getStdin ph) jobInput
       let finish (Right _) = pure ()
           finish (Left e) | Just e' <- fromException e, isEOFError e' = pure ()
           finish (Left e) = logError $ displayShow e
@@ -82,4 +87,5 @@ main = do
             logError $ displayShow (e :: SomeException)
             logWarn "Resuming in 60s"
             threadDelay $ 60 * 1000 * 1000
+      logInfo $ "Spawned " <> displayShow (jobs opts) <> " workers"
       forever $ threadDelay 1000
