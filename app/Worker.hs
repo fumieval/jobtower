@@ -19,6 +19,8 @@ data Opts = Opts
   { host :: String
   , jobs :: Int
   , verbose :: Bool
+  , entrypoint :: String
+  , arguments :: [String]
   }
 
 parseOpts :: Parser Opts
@@ -26,6 +28,8 @@ parseOpts = Opts
   <$> strOption (long "host" <> short 'h' <> value "localhost:1837" <> help "jobtower-server host")
   <*> option auto (long "jobs" <> short 'j' <> value 1 <> help "Number of simultaneous jobs")
   <*> switch (long "verbose" <> short 'v' <> help "verbose logging")
+  <*> strArgument (metavar "CMD" <> help "command entrypoint")
+  <*> many (strArgument (metavar "ARG"))
 
 fetch :: Opts -> RIO LoggedProcessContext Job
 fetch Opts{..} = do
@@ -36,13 +40,13 @@ fetch Opts{..} = do
 
   return job
 
-runJob :: Job -> RIO LoggedProcessContext ()
-runJob Job{..} = do
+runJob :: Opts -> Job -> RIO LoggedProcessContext ()
+runJob Opts{..} Job{..} = do
   let lp = display jobId <> ": "
-  logInfo $ lp <> "Starting " <> display jobCmd <> " " <> displayShow jobArgs
+  logInfo $ lp <> "Starting " <> displayShow jobArgs
   withModifyEnvVars
     (M.insert "JOBTOWER_ID" jobId)
-    $ proc (T.unpack jobCmd) (map T.unpack jobArgs) $ \conf -> withProcessWait
+    $ proc entrypoint (arguments ++ map T.unpack jobArgs) $ \conf -> withProcessWait
     ( setStdin (byteStringInput $ BL.fromStrict $ encodeUtf8 jobInput)
     $ setStdout createPipe
     $ setStderr createPipe conf)
@@ -66,7 +70,7 @@ main = do
   withLogFunc logOpts
     $ \lf -> runRIO (LoggedProcessContext pcxt lf) $ do
       replicateM_ (jobs opts) $ forkIO $ forever
-        $ forever (fetch opts >>= runJob)
+        $ forever (fetch opts >>= runJob opts)
           `catch` \e -> do
             logError $ displayShow (e :: SomeException)
             logWarn "Resuming in 60s"

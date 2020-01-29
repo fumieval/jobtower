@@ -12,7 +12,6 @@ import Data.Function (on)
 data Job = Job
   { jobId :: Text -- ^ Job ID (automatically assigned)
   , jobTime :: Maybe UTCTime -- ^ Job priority
-  , jobCmd :: Text -- ^ Command
   , jobArgs :: [Text] -- ^ Arguments
   , jobInput :: Text -- ^ stdin
   } deriving (Show, Generic)
@@ -21,7 +20,6 @@ instance FromJSON Job where
   parseJSON = withObject "Job" $ \obj -> Job
     <$> obj .:? "id" .!= ""
     <*> obj .:? "time"
-    <*> obj .: "cmd"
     <*> obj .:? "args" .!= []
     <*> obj .:? "input" .!= ""
 
@@ -29,7 +27,6 @@ instance ToJSON Job where
   toJSON Job{..} = object
     [ "id" .= jobId
     , "time" .= jobTime
-    , "cmd" .= jobCmd
     , "args" .= jobArgs
     , "input" .= jobInput
     ]
