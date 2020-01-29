@@ -3,20 +3,16 @@
 module Main where
 import RIO
 
-import Control.Monad.Trans.Resource (runResourceT)
 import qualified Data.ByteString.Lazy as BL
 import Options.Applicative
-import RIO.Directory
 import RIO.Process
 import JobTower.Types
 import UnliftIO.Concurrent (forkIO, forkFinally)
-import qualified Data.Conduit.Combinators as C
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Simple as HC
 import qualified Network.HTTP.Client as HC
 import qualified RIO.Text as T
 import qualified RIO.Map as M
-import RIO.FilePath ((</>))
 import System.IO.Error (isEOFError)
 
 data Opts = Opts
@@ -34,29 +30,18 @@ parseOpts = Opts
 fetch :: Opts -> RIO LoggedProcessContext Job
 fetch Opts{..} = do
   reqJob <- HC.parseUrlThrow $ "http://" <> host <> "/jobs/pop"
-  job@Job{..} <- HC.responseBody <$> HC.httpJSON reqJob
+  job <- HC.responseBody <$> HC.httpJSON reqJob
     { HC.responseTimeout = HC.responseTimeoutNone }
-  logInfo $ display jobId
+  logInfo $ display $ jobId job
 
-  forM_ jobFiles $ \name -> do
-    let path = filesPrefix </> T.unpack name
-
-    unlessM (doesFileExist path) $ do
-      logInfo $ display jobId <> ": Fetching " <> display name
-      reqFile <- HC.parseUrlThrow
-        $ "http://" <> host <> "/files/" <> T.unpack name
-      runResourceT $ HC.httpSink reqFile $ const $ C.sinkFile path
-      getPermissions path >>= setPermissions path . setOwnerExecutable True
-    
   return job
 
 runJob :: Job -> RIO LoggedProcessContext ()
 runJob Job{..} = do
   let lp = display jobId <> ": "
   logInfo $ lp <> "Starting " <> display jobCmd <> " " <> displayShow jobArgs
-  withWorkingDir filesPrefix
-    $ withModifyEnvVars (M.insert "JOBTOWER_ID" jobId
-      . M.insertWith (\a b -> a <> ":" <> b) "PATH" (T.pack filesPrefix))
+  withModifyEnvVars
+    (M.insert "JOBTOWER_ID" jobId)
     $ proc (T.unpack jobCmd) (map T.unpack jobArgs) $ \conf -> withProcessWait
     ( setStdin (byteStringInput $ BL.fromStrict $ encodeUtf8 jobInput)
     $ setStdout createPipe
@@ -76,7 +61,6 @@ runJob Job{..} = do
 main :: IO ()
 main = do
   opts <- execParser $ info parseOpts mempty
-  createDirectoryIfMissing True filesPrefix
   logOpts <- logOptionsHandle stdout (verbose opts)
   pcxt <- mkDefaultProcessContext
   withLogFunc logOpts

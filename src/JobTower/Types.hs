@@ -8,12 +8,10 @@ import Data.Aeson
 import Data.Time.Clock (UTCTime)
 import Data.Text (Text)
 import Data.Function (on)
-import System.FilePath ((</>))
 
 data Job = Job
   { jobId :: Text -- ^ Job ID (automatically assigned)
   , jobTime :: Maybe UTCTime -- ^ Job priority
-  , jobFiles :: [Text] -- ^ File dependency
   , jobCmd :: Text -- ^ Command
   , jobArgs :: [Text] -- ^ Arguments
   , jobInput :: Text -- ^ stdin
@@ -23,7 +21,6 @@ instance FromJSON Job where
   parseJSON = withObject "Job" $ \obj -> Job
     <$> obj .:? "id" .!= ""
     <*> obj .:? "time"
-    <*> obj .:? "files" .!= []
     <*> obj .: "cmd"
     <*> obj .:? "args" .!= []
     <*> obj .:? "input" .!= ""
@@ -32,7 +29,6 @@ instance ToJSON Job where
   toJSON Job{..} = object
     [ "id" .= jobId
     , "time" .= jobTime
-    , "files" .= jobFiles
     , "cmd" .= jobCmd
     , "args" .= jobArgs
     , "input" .= jobInput
@@ -44,6 +40,3 @@ instance Ord Job where
 
 prefix :: FilePath
 prefix = ".jobtower"
-
-filesPrefix :: FilePath
-filesPrefix = prefix </> "files"
