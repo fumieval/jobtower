@@ -7,7 +7,7 @@ import qualified Data.ByteString.Lazy as BL
 import Options.Applicative
 import RIO.Process
 import JobTower.Types
-import UnliftIO.Concurrent (forkIO, forkFinally)
+import UnliftIO.Concurrent (forkFinally)
 import qualified Data.Text.IO as T
 import qualified Network.HTTP.Simple as HC
 import qualified Network.HTTP.Client as HC
@@ -17,7 +17,6 @@ import System.IO.Error (isEOFError)
 
 data Opts = Opts
   { host :: String
-  , jobs :: Int
   , verbose :: Bool
   , entrypoint :: String
   , arguments :: [String]
@@ -26,7 +25,6 @@ data Opts = Opts
 parseOpts :: Parser Opts
 parseOpts = Opts
   <$> strOption (long "host" <> short 'h' <> value "localhost:1837" <> help "jobtower-server host")
-  <*> option auto (long "jobs" <> short 'j' <> value 1 <> help "Number of simultaneous jobs")
   <*> switch (long "verbose" <> short 'v' <> help "verbose logging")
   <*> strArgument (metavar "CMD" <> help "command entrypoint")
   <*> many (strArgument (metavar "ARG"))
@@ -68,12 +66,5 @@ main = do
   logOpts <- logOptionsHandle stdout (verbose opts)
   pcxt <- mkDefaultProcessContext
   withLogFunc logOpts
-    $ \lf -> runRIO (LoggedProcessContext pcxt lf) $ do
-      replicateM_ (jobs opts) $ forkIO $ forever
-        $ forever (fetch opts >>= runJob opts)
-          `catch` \e -> do
-            logError $ displayShow (e :: SomeException)
-            logWarn "Resuming in 60s"
-            threadDelay $ 60 * 1000 * 1000
-      logInfo $ "Spawned " <> displayShow (jobs opts) <> " workers"
-      forever $ threadDelay 1000
+    $ \lf -> runRIO (LoggedProcessContext pcxt lf)
+    $ forever $ fetch opts >>= runJob opts
