@@ -52,4 +52,4 @@ main = do
   logOpts <- logOptionsHandle stderr True
   withLogFunc logOpts $ \lf -> Warp.run 1837 (logStdout $ app vQueue lf) `finally` do
     jobs <- readTVarIO vQueue
-    BL.writeFile (prefix </> "dump.json") $ J.encode $ toList jobs
+    BL.writeFile ("jobtower-server.json") $ J.encode $ toList jobs

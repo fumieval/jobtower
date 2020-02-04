@@ -34,6 +34,3 @@ instance Eq Job where
   (==) = on (==) jobTime
 instance Ord Job where
   compare = on compare jobTime
-
-prefix :: FilePath
-prefix = ".jobtower"

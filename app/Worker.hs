@@ -5,15 +5,14 @@ import RIO
 
 import qualified Data.ByteString.Lazy as BL
 import Options.Applicative
+import RIO.Directory (createDirectoryIfMissing)
+import RIO.FilePath
 import RIO.Process
 import JobTower.Types
-import UnliftIO.Concurrent (forkFinally)
-import qualified Data.Text.IO as T
 import qualified Network.HTTP.Simple as HC
 import qualified Network.HTTP.Client as HC
 import qualified RIO.Text as T
 import qualified RIO.Map as M
-import System.IO.Error (isEOFError)
 
 data Opts = Opts
   { host :: String
@@ -42,21 +41,16 @@ runJob :: Opts -> Job -> RIO LoggedProcessContext ()
 runJob Opts{..} Job{..} = do
   let lp = display jobId <> ": "
   logInfo $ lp <> "Starting " <> displayShow jobArgs
-  withModifyEnvVars
+  let prefix = ".jobtower-worker"
+  createDirectoryIfMissing True prefix
+  withFile (prefix </> "job-" <> T.unpack jobId <.> "log") WriteMode $ \logHandle ->
+    withModifyEnvVars
     (M.insert "JOBTOWER_ID" jobId)
     $ proc entrypoint (arguments ++ map T.unpack jobArgs) $ \conf -> withProcessWait
     ( setStdin (byteStringInput $ BL.fromStrict $ encodeUtf8 jobInput)
-    $ setStdout createPipe
-    $ setStderr createPipe conf)
+    $ setStdout (useHandleOpen logHandle)
+    $ setStderr (useHandleOpen logHandle) conf)
     $ \ph -> do
-      let finish (Right _) = pure ()
-          finish (Left e) | Just e' <- fromException e, isEOFError e' = pure ()
-          finish (Left e) = logError $ displayShow e
-          pipe p f = flip forkFinally finish $ forever $ do
-            ln <- liftIO $ T.hGetLine (p ph)
-            logInfo $ lp <> f <> display ln
-      _ <- pipe getStdout "STDOUT: "
-      _ <- pipe getStderr "STDERR: "
       code <- waitExitCode ph
       logInfo $ lp <> displayShow code
 
