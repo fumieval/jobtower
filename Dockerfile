@@ -1,3 +1,4 @@
+# syntax = docker/dockerfile:experimental
 # from https://github.com/phadej/docker-haskell-example/blob/master/Dockerfile
 # BUILDER
 ##############################################################################
@@ -89,11 +90,8 @@ ARG EXECUTABLE
 RUN if [ -z "$EXECUTABLE" ]; then echo "ERROR: Empty $EXECUTABLE"; false; fi
 
 # BUILD!!!
-RUN cabal v2-build -v1 exe:$EXECUTABLE
-
-# Copy build artifact to known directory
-# - todo arg
-RUN mkdir -p /build/artifacts && cp $(cabal-plan list-bin $EXECUTABLE) /build/artifacts/
+RUN --mount=type=cache,target=dist-newstyle cabal v2-build -v1 exe:$EXECUTABLE \
+  && mkdir -p /build/artifacts && cp $(cabal-plan list-bin $EXECUTABLE) /build/artifacts/
 
 # Make a final binary a bit smaller
 RUN strip /build/artifacts/$EXECUTABLE; done

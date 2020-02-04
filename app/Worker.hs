@@ -1,18 +1,21 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 import RIO
 
+import qualified Data.Aeson as J
 import qualified Data.ByteString.Lazy as BL
-import Options.Applicative
+import qualified Options.Applicative as O
 import RIO.Directory (createDirectoryIfMissing)
 import RIO.FilePath
 import RIO.Process
 import JobTower.Types
-import qualified Network.HTTP.Simple as HC
+import qualified Network.HTTP.Simple as HCS
 import qualified Network.HTTP.Client as HC
 import qualified RIO.Text as T
 import qualified RIO.Map as M
+import Data.Time (getCurrentTime)
 
 data Opts = Opts
   { host :: String
@@ -21,23 +24,33 @@ data Opts = Opts
   , arguments :: [String]
   }
 
-parseOpts :: Parser Opts
+parseOpts :: O.Parser Opts
 parseOpts = Opts
-  <$> strOption (long "host" <> short 'h' <> value "localhost:1837" <> help "jobtower-server host")
-  <*> switch (long "verbose" <> short 'v' <> help "verbose logging")
-  <*> strArgument (metavar "CMD" <> help "command entrypoint")
-  <*> many (strArgument (metavar "ARG"))
+  <$> O.strOption (O.long "host" <> O.short 'h' <> O.value "localhost:1837" <> O.help "jobtower-server host")
+  <*> O.switch (O.long "verbose" <> O.short 'v' <> O.help "verbose logging")
+  <*> O.strArgument (O.metavar "CMD" <> O.help "command entrypoint")
+  <*> many (O.strArgument (O.metavar "ARG"))
 
-fetch :: Opts -> RIO LoggedProcessContext Job
-fetch Opts{..} = do
+withJob :: Opts
+  -> (Job -> RIO LoggedProcessContext ExitCode)
+  -> RIO LoggedProcessContext ()
+withJob Opts{..} cont = do
   reqJob <- HC.parseUrlThrow $ "http://" <> host <> "/jobs/pop"
-  job <- HC.responseBody <$> HC.httpJSON reqJob
+  job <- HC.responseBody <$> HCS.httpJSON reqJob
     { HC.responseTimeout = HC.responseTimeoutNone }
   logInfo $ display $ jobId job
+  reqStatus <- HC.parseUrlThrow $ "http://" <> host <> "/jobs/" <> T.unpack (jobId job) <> "/status"
+  let sendStatus s = do
+        now <- liftIO getCurrentTime
+        _ <- HCS.httpLbs reqStatus
+          { HC.requestBody = HC.RequestBodyLBS $ J.encode $ Message now s }
+        return ()
+  try (cont job) >>= \case
+    Left e -> sendStatus $ Errored $ T.pack $ show (e :: SomeException)
+    Right ExitSuccess -> sendStatus Success
+    Right (ExitFailure c) -> sendStatus $ Failed c
 
-  return job
-
-runJob :: Opts -> Job -> RIO LoggedProcessContext ()
+runJob :: Opts -> Job -> RIO LoggedProcessContext ExitCode
 runJob Opts{..} Job{..} = do
   let lp = display jobId <> ": "
   logInfo $ lp <> "Starting " <> displayShow jobArgs
@@ -50,15 +63,13 @@ runJob Opts{..} Job{..} = do
     ( setStdin (byteStringInput $ BL.fromStrict $ encodeUtf8 jobInput)
     $ setStdout (useHandleOpen logHandle)
     $ setStderr (useHandleOpen logHandle) conf)
-    $ \ph -> do
-      code <- waitExitCode ph
-      logInfo $ lp <> displayShow code
+    waitExitCode
 
 main :: IO ()
 main = do
-  opts <- execParser $ info parseOpts mempty
+  opts <- O.execParser $ O.info parseOpts mempty
   logOpts <- logOptionsHandle stdout (verbose opts)
   pcxt <- mkDefaultProcessContext
   withLogFunc logOpts
     $ \lf -> runRIO (LoggedProcessContext pcxt lf)
-    $ forever $ fetch opts >>= runJob opts
+    $ forever $ withJob opts $ runJob opts

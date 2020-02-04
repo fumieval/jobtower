@@ -34,3 +34,28 @@ instance Eq Job where
   (==) = on (==) jobTime
 instance Ord Job where
   compare = on compare jobTime
+
+data Message a = Message
+  { msgTime :: !UTCTime
+  , msgContent :: !a
+  }
+
+instance FromJSON a => FromJSON (Message a) where
+  parseJSON = withObject "Message" $ \obj -> Message
+    <$> obj .: "time"
+    <*> obj .: "content"
+
+instance ToJSON a => ToJSON (Message a) where
+  toJSON Message{..} = object
+    [ "time" .= msgTime
+    , "content" .= msgContent
+    ]
+
+data JobStatus = Success
+  | Failed !Int
+  | Errored !Text
+  | Running
+  | Taken
+  deriving Generic
+instance FromJSON JobStatus
+instance ToJSON JobStatus

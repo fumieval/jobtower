@@ -7,19 +7,17 @@ import RIO
 import Control.Monad.STM (retry)
 import Network.Wai
 import Network.Wai.Middleware.RequestLogger (logStdout)
-import RIO.FilePath ((</>))
 import JobTower.Types
 import qualified Data.Aeson as J
 import qualified Data.Heap as H
 import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as UUID
 import qualified Network.Wai.Handler.Warp as Warp
-import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Time.Clock (getCurrentTime)
 import Network.HTTP.Types
 
 app :: TVar (H.Heap Job) -> LogFunc -> Application
-app vQueue _logFunc req sendResp = case (requestMethod req, pathInfo req) of
+app vQueue logFunc req sendResp = case (requestMethod req, pathInfo req) of
   ("POST", ["jobs"]) -> strictRequestBody req >>= \bs -> case J.eitherDecode bs of
     Left err -> text status400 (fromString err)
     Right jobs -> do
@@ -29,6 +27,10 @@ app vQueue _logFunc req sendResp = case (requestMethod req, pathInfo req) of
         pure j { jobId = uuid, jobTime = Just t }
       liftIO $ atomically $ modifyTVar' vQueue $ foldr H.insert `flip` (jobs' :: [Job])
       text status200 "ok"
+  ("POST", ["jobs", jid, "status"]) -> do
+    bs <- strictRequestBody req
+    runRIO logFunc $ logInfo $ display jid <> ": " <> displayShow bs
+    text status200 "ok"
   ("GET", ["jobs"]) -> do
     jobs <- liftIO $ readTVarIO vQueue
     json $ toList jobs
@@ -50,6 +52,4 @@ main :: IO ()
 main = do
   vQueue <- newTVarIO (H.empty :: H.Heap Job)
   logOpts <- logOptionsHandle stderr True
-  withLogFunc logOpts $ \lf -> Warp.run 1837 (logStdout $ app vQueue lf) `finally` do
-    jobs <- readTVarIO vQueue
-    BL.writeFile ("jobtower-server.json") $ J.encode $ toList jobs
+  withLogFunc logOpts $ \lf -> Warp.run 1837 (logStdout $ app vQueue lf)
