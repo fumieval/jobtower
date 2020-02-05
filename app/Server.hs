@@ -30,7 +30,8 @@ app vQueue logFunc req sendResp = case (requestMethod req, pathInfo req) of
       text status200 "ok"
   ("POST", ["jobs", jid, "status"]) -> do
     bs <- strictRequestBody req
-    runRIO logFunc $ logInfo $ display jid <> ": " <> displayShow bs
+    runRIO logFunc $ logInfo $ display jid <> ": "
+      <> displayBytesUtf8 (BL.toStrict bs)
     text status200 "ok"
   ("POST", ["jobs", jid, "log"]) -> do
     bs <- strictRequestBody req
