@@ -56,6 +56,6 @@ data JobStatus = Success
   | Errored !Text
   | Running
   | Taken
-  deriving Generic
+  deriving (Generic, Show)
 instance FromJSON JobStatus
 instance ToJSON JobStatus

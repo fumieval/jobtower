@@ -1,0 +1,31 @@
+jobtower: dead simple distributed task scheduling system
+====
+
+Usage
+----
+
+```
+curl -X POST "http://localhost:1837/jobs" -d'[{"cmd": "echo", "args": ["hello"]}]'
+```
+
+API
+----
+
+```
+POST /jobs
+GET /jobs
+GET /jobs/pop
+```
+
+Model
+----
+
+```code:haskell
+data Job = Job
+  { jobId :: Text -- ^ Job ID (automatically assigned)
+  , jobTime :: Maybe UTCTime -- ^ Job priority
+  , jobArgs :: [Text] -- ^ Arguments
+  , jobInput :: Text -- ^ stdin
+  }
+```
+

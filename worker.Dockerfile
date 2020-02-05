@@ -71,30 +71,19 @@ RUN cabal v2-update
 # - note: actual build tools ought to be specified in build-tool-depends field
 RUN cabal v2-install cabal-plan --constraint='cabal-plan ^>=0.5' --constraint='cabal-plan +exe'
 
-# Add a .cabal file to build environment
-# - it's enough to build dependencies
-COPY *.cabal cabal.project /build/
-
-# Build package dependencies first
-# - beware of https://github.com/haskell/cabal/issues/6106
-RUN cabal v2-build -v1 --dependencies-only all
-
 # Add rest of the files into build environment
 # - remember to keep .dockerignore up to date
 COPY . /build
 
-# An executable to build
-ARG EXECUTABLE
-
 # Check that ARG is set up
-RUN if [ -z "$EXECUTABLE" ]; then echo "ERROR: Empty $EXECUTABLE"; false; fi
+RUN if [ -z "jobtower-worker" ]; then echo "ERROR: Empty jobtower-worker"; false; fi
 
 # BUILD!!!
-RUN --mount=type=cache,target=dist-newstyle cabal v2-build -v1 exe:$EXECUTABLE \
-  && mkdir -p /build/artifacts && cp $(cabal-plan list-bin $EXECUTABLE) /build/artifacts/
+RUN --mount=type=cache,target=dist-newstyle cabal v2-build -v1 exe:jobtower-worker \
+  && mkdir -p /build/artifacts && cp $(cabal-plan list-bin jobtower-worker) /build/artifacts/
 
 # Make a final binary a bit smaller
-RUN strip /build/artifacts/$EXECUTABLE; done
+RUN strip /build/artifacts/jobtower-worker; done
 
 # Small debug output
 RUN ls -lh /build/artifacts
@@ -129,17 +118,11 @@ WORKDIR /app
 # Expose port
 EXPOSE 1837
 
-# Inherit the executable argument
-ARG EXECUTABLE
-
 # Copy build artifact from a builder stage
-COPY --from=builder /build/artifacts/$EXECUTABLE /app/$EXECUTABLE
-
-# ARG env isn't preserved, so we make another ENV
-ENV EXECUTABLE_ $EXECUTABLE
+COPY --from=builder /build/artifacts/jobtower-worker /app/jobtower-worker
 
 RUN env
 RUN ls /app
 
 # Set up a default command to run
-ENTRYPOINT /app/${EXECUTABLE_}
+ENTRYPOINT ["./jobtower-worker"]

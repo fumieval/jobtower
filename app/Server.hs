@@ -15,6 +15,7 @@ import qualified Data.UUID.V4 as UUID
 import qualified Network.Wai.Handler.Warp as Warp
 import Data.Time.Clock (getCurrentTime)
 import Network.HTTP.Types
+import System.Environment (lookupEnv)
 
 app :: TVar (H.Heap Job) -> LogFunc -> Application
 app vQueue logFunc req sendResp = case (requestMethod req, pathInfo req) of
@@ -52,4 +53,7 @@ main :: IO ()
 main = do
   vQueue <- newTVarIO (H.empty :: H.Heap Job)
   logOpts <- logOptionsHandle stderr True
-  withLogFunc logOpts $ \lf -> Warp.run 1837 (logStdout $ app vQueue lf)
+  port <- (fromMaybe 1837 . (>>=readMaybe)) <$> lookupEnv "PORT"
+  withLogFunc logOpts $ \lf -> do
+    runRIO lf $ logInfo $ "Listening on " <> display port
+    Warp.run port (logStdout $ app vQueue lf)

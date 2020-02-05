@@ -29,7 +29,7 @@ executable jobtower-server
   main-is:             Server.hs
   -- other-extensions:
   build-depends:       base >=4.12.0.0
-    , scotty, stm, heaps, time, aeson, yaml, transformers
+    , stm, heaps, time, aeson, yaml, transformers
     , bytestring, text, rio, uuid, wai-extra, warp, wai, jobtower, http-types
   hs-source-dirs: app
   ghc-options: -Wall -threaded -O2
@@ -42,7 +42,7 @@ executable jobtower-worker
   build-depends:       base >=4.12.0.0
     , stm, heaps, time, aeson, yaml, transformers
     , bytestring, text, rio, uuid, http-conduit, conduit, http-client
-    , optparse-applicative, unliftio, resourcet, jobtower
+    , optparse-applicative, unliftio, resourcet, jobtower, http-types
   hs-source-dirs: app
   ghc-options: -Wall -threaded
   default-extensions: NoImplicitPrelude
