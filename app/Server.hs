@@ -3,7 +3,7 @@
 module Main where
 
 import RIO
-
+import qualified RIO.ByteString.Lazy as BL
 import Control.Monad.STM (retry)
 import Network.Wai
 import Network.Wai.Middleware.RequestLogger (logStdout)
@@ -31,6 +31,11 @@ app vQueue logFunc req sendResp = case (requestMethod req, pathInfo req) of
   ("POST", ["jobs", jid, "status"]) -> do
     bs <- strictRequestBody req
     runRIO logFunc $ logInfo $ display jid <> ": " <> displayShow bs
+    text status200 "ok"
+  ("POST", ["jobs", jid, "log"]) -> do
+    bs <- strictRequestBody req
+    runRIO logFunc $ logInfo $ display jid <> ": "
+      <> displayBytesUtf8 (BL.toStrict bs)
     text status200 "ok"
   ("GET", ["jobs"]) -> do
     jobs <- liftIO $ readTVarIO vQueue

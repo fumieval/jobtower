@@ -11,7 +11,6 @@ import RIO.Directory (createDirectoryIfMissing)
 import RIO.FilePath
 import RIO.Process
 import JobTower.Types
-import qualified Network.HTTP.Simple as HCS
 import qualified Network.HTTP.Client as HC
 import qualified RIO.Text as T
 import qualified RIO.Map as M
@@ -34,7 +33,7 @@ parseOpts = Opts
 
 withJob :: HC.Manager
   -> Opts
-  -> (Job -> RIO LoggedProcessContext ExitCode)
+  -> (Job -> RIO LoggedProcessContext (FilePath, ExitCode))
   -> RIO LoggedProcessContext ()
 withJob man Opts{..} cont = do
   logInfo "Waiting for a job"
@@ -47,27 +46,39 @@ withJob man Opts{..} cont = do
         logError $ displayShow e
         exitFailure
       Right j -> pure j
-  reqStatus <- HC.parseUrlThrow $ "http://" <> host <> "/jobs/" <> T.unpack (jobId job) <> "/status"
+  let jobUrl = "http://" <> host <> "/jobs/" <> T.unpack (jobId job)
+  reqStatus <- HC.parseUrlThrow $ jobUrl <> "/status"
   let sendStatus s = do
         logInfo $ display (jobId job) <> ": " <> displayShow s
         now <- liftIO getCurrentTime
-        _ <- HCS.httpLbs reqStatus
+        _ <- liftIO $ HC.httpLbs reqStatus
           { HC.method = "POST"
           , HC.requestBody = HC.RequestBodyLBS $ J.encode $ Message now s }
+          man
         return ()
   try (cont job) >>= \case
     Left e -> sendStatus $ Errored $ T.pack $ show (e :: SomeException)
-    Right ExitSuccess -> sendStatus Success
-    Right (ExitFailure c) -> sendStatus $ Failed c
+    Right (path, c) -> do
+      reqLog <- HC.parseUrlThrow $ jobUrl <> "/log"
+      logBody <- liftIO $ HC.streamFile path
+      resp <- liftIO $ HC.httpLbs reqLog
+        { HC.method = "POST"
+        , HC.requestBody = logBody
+        } man
+      logInfo $ "jobs/" <> display (jobId job) <> "/log " <> displayShow resp
+      case c of
+        ExitSuccess -> sendStatus Success
+        ExitFailure i -> sendStatus $ Failed i
 
-runJob :: Opts -> Job -> RIO LoggedProcessContext ExitCode
+runJob :: Opts -> Job -> RIO LoggedProcessContext (FilePath, ExitCode)
 runJob Opts{..} Job{..} = do
   let lp = display jobId <> ": "
   let args = arguments ++ map T.unpack jobArgs
   logInfo $ lp <> "Starting " <> displayShow args
   let prefix = ".jobtower-worker"
   createDirectoryIfMissing True prefix
-  withFile (prefix </> "job-" <> T.unpack jobId <.> "log") WriteMode $ \logHandle ->
+  let logPath = prefix </> "job-" <> T.unpack jobId <.> "log"
+  c <- withFile logPath WriteMode $ \logHandle ->
     withModifyEnvVars
     (M.insert "JOBTOWER_ID" jobId)
     $ proc entrypoint args $ \conf -> withProcessWait
@@ -75,6 +86,7 @@ runJob Opts{..} Job{..} = do
     $ setStdout (useHandleOpen logHandle)
     $ setStderr (useHandleOpen logHandle) conf)
     waitExitCode
+  return (logPath, c)
 
 main :: IO ()
 main = do
